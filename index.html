@@ -148,15 +148,35 @@
     set(v) { try { localStorage.setItem('apiUrl', v); } catch (e) {} }
   };
 
+  // Conexión por script (JSONP): no depende de los permisos entre sitios del navegador
+  let jsonpN = 0, usarJsonp = false;
+  function jsonp(url) {
+    return new Promise((ok, ko) => {
+      const nombre = '__resp' + Date.now() + (jsonpN++);
+      const sc = document.createElement('script');
+      const fin = () => { delete window[nombre]; sc.remove(); clearTimeout(t); };
+      const t = setTimeout(() => { fin(); ko(new Error('timeout')); }, 15000);
+      window[nombre] = data => { fin(); ok(data); };
+      sc.onerror = () => { fin(); ko(new Error('script')); };
+      sc.src = url + '&callback=' + nombre;
+      document.head.appendChild(sc);
+    });
+  }
+
   async function api(accion, params) {
     const base = apiUrl.get();
-    const q = new URLSearchParams(Object.assign({ api: accion, t: Date.now() }, params));
-    let r;
-    try { r = await fetch(base + '?' + q.toString(), { method: 'GET', redirect: 'follow' }); }
-    catch (e) { throw new Error('No pudimos conectar con la app. Revisa la URL y que la app esté publicada para "Cualquier persona".'); }
-    let data;
-    try { data = await r.json(); }
-    catch (e) { throw new Error('La app respondió, pero no como validador. Revisa que la URL sea la /exec correcta y que tenga la versión más reciente.'); }
+    const url = base + '?' + new URLSearchParams(Object.assign({ api: accion, t: Date.now() }, params)).toString();
+    let data = null;
+    if (!usarJsonp) {
+      try {
+        const r = await fetch(url, { method: 'GET', redirect: 'follow' });
+        data = await r.json();
+      } catch (e) { usarJsonp = true; }   // si la conexión directa falla, se usa la otra desde ahora
+    }
+    if (data === null) {
+      try { data = await jsonp(url); }
+      catch (e) { throw new Error('No pudimos conectar con la app. Revisa la URL y que la app esté publicada para "Cualquier persona".'); }
+    }
     if (data.error) throw new Error(data.error);
     return data;
   }
