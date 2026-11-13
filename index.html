@@ -83,6 +83,8 @@
     .funcion-tag { display: inline-block; margin: 2px 0 12px; padding: 7px 16px; border-radius: 999px; font: italic 900 21px/1.1 var(--tit); color: var(--noche); background: var(--lima); box-shadow: 0 0 22px -4px rgba(231, 248, 71, .7); }
     #lector { padding: 0; overflow: hidden; border-color: rgba(58, 238, 227, .5); }
     #lector video { display: block; width: 100% !important; border-radius: 16px; }
+    .nota-ayuda { margin: -6px 0 14px; font-size: 13.5px; color: var(--tenue); line-height: 1.45; }
+    .nota-ayuda a { color: var(--cian); }
     #btnCam.sec { color: var(--luz); background: transparent; border: 1.6px solid rgba(244, 236, 220, .55); box-shadow: none; }
   </style>
 </head>
@@ -99,7 +101,11 @@
       <label>PIN del validador
         <input id="pin" type="password" inputmode="numeric" autocomplete="off" required>
       </label>
+      <label>URL de la app (termina en /exec)
+        <input id="apiUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" style="font-size:13px;letter-spacing:0" placeholder="https://script.google.com/macros/s/…/exec">
+      </label>
       <p id="pinErr" class="error" hidden></p>
+      <p id="pinAyuda" class="nota-ayuda" hidden></p>
       <button class="btn" id="btnPin">Entrar</button>
     </form>
   </section>
@@ -123,7 +129,7 @@
 </script>
 <script>
   // URL de la app web de Apps Script (la que termina en /exec)
-  const API = 'https://script.google.com/macros/s/AKfycbyOUzz7kQe5_Igw-pZnlmPpBSoyh1vuRLQfd4bcH1njQCJj7GzkVXcHhDLeMiHTSkgT/exec';
+  const API_DEFECTO = 'https://script.google.com/macros/s/AKfycbyOUzz7kQe5_Igw-pZnlmPpBSoyh1vuRLQfd4bcH1njQCJj7GzkVXcHhDLeMiHTSkgT/exec';
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -135,14 +141,22 @@
     del() { memPin = ''; try { localStorage.removeItem('pinValidador'); } catch (e) {} }
   };
 
+  // La URL de la app se puede cambiar desde la pantalla del PIN (se guarda en este celular)
+  const limpiaUrl = u => String(u || '').trim().replace(/[?#].*$/, '').replace(/\/+$/, '');
+  const apiUrl = {
+    get() { try { return localStorage.getItem('apiUrl') || API_DEFECTO; } catch (e) { return API_DEFECTO; } },
+    set(v) { try { localStorage.setItem('apiUrl', v); } catch (e) {} }
+  };
+
   async function api(accion, params) {
+    const base = apiUrl.get();
     const q = new URLSearchParams(Object.assign({ api: accion, t: Date.now() }, params));
     let r;
-    try { r = await fetch(API + '?' + q.toString(), { method: 'GET', redirect: 'follow' }); }
-    catch (e) { throw new Error('Sin conexión. Revisa el internet e intenta de nuevo.'); }
+    try { r = await fetch(base + '?' + q.toString(), { method: 'GET', redirect: 'follow' }); }
+    catch (e) { throw new Error('No pudimos conectar con la app. Revisa la URL y que la app esté publicada para "Cualquier persona".'); }
     let data;
     try { data = await r.json(); }
-    catch (e) { throw new Error('La app no respondió bien. Revisa que esté publicada para "Cualquier persona".'); }
+    catch (e) { throw new Error('La app respondió, pero no como validador. Revisa que la URL sea la /exec correcta y que tenga la versión más reciente.'); }
     if (data.error) throw new Error(data.error);
     return data;
   }
@@ -150,7 +164,15 @@
   /* ---------- PIN ---------- */
   function mostrarPin(msg) {
     $('app').hidden = true; $('pinBox').hidden = false;
+    $('apiUrl').value = apiUrl.get();
     $('pinErr').textContent = msg || ''; $('pinErr').hidden = !msg;
+    const conexion = /conectar|respondi/i.test(msg || '');
+    $('pinAyuda').hidden = !conexion;
+    if (conexion) {
+      const prueba = apiUrl.get() + '?api=pin&pin=0';
+      $('pinAyuda').innerHTML = 'Prueba abriendo <a target="_blank" rel="noopener" href="' + esc(prueba) + '">este enlace</a>. ' +
+        'Si ves <b>{"error":"PIN incorrecto."}</b> la app está bien; si ves el login de Google, cambia el acceso a "Cualquier persona".';
+    }
     $('pin').focus();
   }
   function mostrarApp() { $('pinBox').hidden = true; $('app').hidden = false; }
@@ -158,6 +180,9 @@
   $('pinForm').addEventListener('submit', async e => {
     e.preventDefault();
     const pin = $('pin').value.trim();
+    const url = limpiaUrl($('apiUrl').value);
+    if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) return mostrarPin('La URL de la app debe empezar por https://script.google.com/ y terminar en /exec.');
+    apiUrl.set(url);
     $('btnPin').disabled = true; $('btnPin').textContent = 'Verificando…';
     try {
       await api('pin', { pin });
