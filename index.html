@@ -215,7 +215,7 @@
   /* ---------- Consulta y registro ---------- */
   function extraerCodigo(txt) {
     txt = String(txt || '').trim();
-    try { return (new URL(txt).searchParams.get('c') || '').toUpperCase(); }
+    try { const u = new URL(txt).searchParams; return (u.get('b') || u.get('codigo') || u.get('c') || '').toUpperCase(); }   // c = boletas viejas
     catch (e) { return txt.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   }
 
@@ -242,7 +242,7 @@
     if (!codigo || ocupado) return;
     ocupado = true;
     pintar('info', '…', 'Buscando', `<p class="mono">${esc(codigo)}</p>`, false);
-    try { mostrarBoleta(await api('consultar', { c: codigo, pin: pinStore.get() })); }
+    try { mostrarBoleta(await api('consultar', { b: codigo, pin: pinStore.get() })); }
     catch (err) { manejarError(err); }
     finally { ocupado = false; }
   }
@@ -267,7 +267,7 @@
     const btn = $('btnIngreso');
     btn.disabled = true; btn.textContent = 'Registrando…';
     try {
-      const r = await api('registrar', { c: codigo, pin: pinStore.get() });
+      const r = await api('registrar', { b: codigo, pin: pinStore.get() });
       if (r.resultado === 'OK') {
         pintar('ok', '✓', 'INGRESO OK', `${tagFuncion(r)}<p><strong>${esc(r.nombre)}</strong> · Boleta #${esc(r.numero)}</p>`, true);
         if (navigator.vibrate) navigator.vibrate(120);
@@ -325,7 +325,8 @@
   }
 
   /* ---------- Inicio ---------- */
-  const CODIGO_URL = new URLSearchParams(location.search).get('c') || '';
+  const qs = new URLSearchParams(location.search);
+  const CODIGO_URL = qs.get('b') || qs.get('c') || '';
   if (!pinStore.get()) mostrarPin();
   else { mostrarApp(); if (CODIGO_URL) consultar(CODIGO_URL); }
 </script>
